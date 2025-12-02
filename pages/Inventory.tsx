@@ -1,6 +1,6 @@
 
-import React, { useState, useMemo } from 'react';
-import { Search, Download, Info, X, Edit2, Save, AlertCircle } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Search, Download, Info, X, Edit2, Save, AlertCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { Plate, PlateStatus, Destination } from '../types';
 import { EQUIPMENT_RULES, DESTINATIONS } from '../constants';
 import { formatNumber } from '../utils/plateUtils';
@@ -16,9 +16,18 @@ const Inventory: React.FC<InventoryProps> = ({ plates, onUpdatePlate }) => {
   const [filterDestination, setFilterDestination] = useState<string>('ALL');
   const [showRanges, setShowRanges] = useState(false);
   
+  // Pagination State
+  const [itemsPerPage, setItemsPerPage] = useState(100);
+  const [currentPage, setCurrentPage] = useState(1);
+  
   // Edit State
   const [editingPlate, setEditingPlate] = useState<Plate | null>(null);
   const [editForm, setEditForm] = useState<Partial<Plate>>({});
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, filterDestination, itemsPerPage]);
 
   const filteredPlates = useMemo(() => {
     return plates.filter(plate => {
@@ -37,8 +46,16 @@ const Inventory: React.FC<InventoryProps> = ({ plates, onUpdatePlate }) => {
     }).sort((a, b) => b.number - a.number); // Newest numbers first
   }, [plates, searchTerm, filterStatus, filterDestination]);
 
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredPlates.length / itemsPerPage);
+  const paginatedPlates = filteredPlates.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   const handleExport = () => {
     const headers = ["Número", "Equipamento", "Status", "Destino", "Data Entrada", "Data Saída", "Data Devolução"];
+    // Export ALL filtered plates, not just the page
     const csvContent = [
       headers.join(","),
       ...filteredPlates.map(p => [
@@ -92,7 +109,7 @@ const Inventory: React.FC<InventoryProps> = ({ plates, onUpdatePlate }) => {
   };
 
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6 relative pb-12">
       {/* Edit Modal */}
       {editingPlate && (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
@@ -250,7 +267,8 @@ const Inventory: React.FC<InventoryProps> = ({ plates, onUpdatePlate }) => {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* Table Container */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -271,7 +289,7 @@ const Inventory: React.FC<InventoryProps> = ({ plates, onUpdatePlate }) => {
                   </td>
                 </tr>
               ) : (
-                filteredPlates.map((plate) => (
+                paginatedPlates.map((plate) => (
                   <tr key={plate.number} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 font-mono font-medium text-blue-600">
                       {formatNumber(plate.number)}
@@ -324,10 +342,65 @@ const Inventory: React.FC<InventoryProps> = ({ plates, onUpdatePlate }) => {
             </tbody>
           </table>
         </div>
-        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200">
-          <p className="text-xs text-gray-500 text-right">
-            Total listado: {filteredPlates.length}
-          </p>
+
+        {/* Footer & Pagination */}
+        <div className="bg-gray-50 px-6 py-3 border-t border-gray-200 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <p className="text-xs text-gray-500">
+              Mostrando {filteredPlates.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} até {Math.min(currentPage * itemsPerPage, filteredPlates.length)} de {filteredPlates.length} registros
+            </p>
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <span>Itens por página:</span>
+              <select 
+                value={itemsPerPage} 
+                onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                className="bg-white border border-gray-300 rounded px-2 py-1 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value={100}>100</option>
+                <option value={250}>250</option>
+                <option value={500}>500</option>
+                <option value={1000}>1000</option>
+                <option value={5000}>5000</option>
+                <option value={10000}>10000</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setCurrentPage(1)} 
+              disabled={currentPage === 1}
+              className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 disabled:opacity-50 hover:bg-gray-100"
+            >
+              <ChevronsLeft size={16} />
+            </button>
+            <button 
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} 
+              disabled={currentPage === 1}
+              className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 disabled:opacity-50 hover:bg-gray-100"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            
+            <span className="text-xs font-medium text-gray-700 px-2 whitespace-nowrap">
+              Página {currentPage} de {Math.max(1, totalPages)}
+            </span>
+
+            <button 
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} 
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 disabled:opacity-50 hover:bg-gray-100"
+            >
+              <ChevronRight size={16} />
+            </button>
+            <button 
+              onClick={() => setCurrentPage(totalPages)} 
+              disabled={currentPage === totalPages || totalPages === 0}
+              className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-600 disabled:opacity-50 hover:bg-gray-100"
+            >
+              <ChevronsRight size={16} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
