@@ -1,20 +1,24 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Trash2, AlertTriangle, Lock, Save, CheckCircle, ShieldAlert, History, RefreshCcw, Shield } from 'lucide-react';
-import { Plate, TransactionLog } from '../types';
+import { Download, Upload, Trash2, AlertTriangle, Lock, Save, CheckCircle, ShieldAlert, History, RefreshCcw, Shield, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plate, TransactionLog, UsageConfig } from '../types';
+import { EQUIPMENT_RULES } from '../constants';
 
 interface SettingsProps {
   plates: Plate[];
   logs: TransactionLog[];
+  usageConfig: UsageConfig;
   onImport: (plates: Plate[], logs: TransactionLog[]) => void;
   onClear: () => void;
+  onUpdateUsage: (config: UsageConfig) => void;
 }
 
-const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) => {
+const Settings: React.FC<SettingsProps> = ({ plates, logs, usageConfig, onImport, onClear, onUpdateUsage }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Password State
-  const [password, setPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isPasswordSet, setIsPasswordSet] = useState(false);
   
@@ -29,13 +33,18 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
   // Restore Point State
   const [restorePointDate, setRestorePointDate] = useState<string | null>(null);
 
+  // Local Usage State for Editing
+  const [localUsage, setLocalUsage] = useState<UsageConfig>({});
+  const [isUsageOpen, setIsUsageOpen] = useState(false);
+
   useEffect(() => {
     const storedPass = localStorage.getItem('sgp_admin_password');
     if (storedPass) {
       setIsPasswordSet(true);
     }
     checkRestorePoint();
-  }, []);
+    setLocalUsage(usageConfig);
+  }, [usageConfig]);
 
   const checkRestorePoint = () => {
     const storedPoint = localStorage.getItem('sgp_restore_point');
@@ -59,7 +68,6 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
     };
     localStorage.setItem('sgp_restore_point', JSON.stringify(backupData));
     setRestorePointDate(backupData.timestamp);
-    console.log('Ponto de restauração criado.');
   };
 
   const handleRestoreFromPoint = () => {
@@ -79,8 +87,9 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
     const data = {
       plates,
       logs,
+      usageConfig,
       exportDate: new Date().toISOString(),
-      version: '1.0'
+      version: '1.5'
     };
     
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -109,12 +118,9 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
     const storedPass = localStorage.getItem('sgp_admin_password');
     
     if (securityPasswordInput === storedPass) {
-      // 1. Create Restore Point automatically before action
       createRestorePoint();
 
-      // 2. Execute Action
       if (pendingAction === 'IMPORT') {
-        // Trigger file input
         if (fileInputRef.current) {
           fileInputRef.current.click();
         }
@@ -140,6 +146,7 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
         const json = JSON.parse(event.target?.result as string);
         if (json.plates && Array.isArray(json.plates)) {
           onImport(json.plates, json.logs || []);
+          if (json.usageConfig) onUpdateUsage(json.usageConfig);
           setMessage({ type: 'success', text: 'Dados importados com sucesso! Ponto de restauração criado.' });
         } else {
           throw new Error('Formato inválido');
@@ -149,29 +156,53 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
       }
     };
     reader.readAsText(file);
-    // Reset input
     e.target.value = '';
   };
 
   const handleSavePassword = () => {
-    if (password.length < 4) {
-      setMessage({ type: 'error', text: 'A senha deve ter pelo menos 4 caracteres.' });
+    const storedPass = localStorage.getItem('sgp_admin_password');
+
+    // If password exists, validate current password
+    if (isPasswordSet && storedPass) {
+      if (currentPassword !== storedPass) {
+        setMessage({ type: 'error', text: 'Senha atual incorreta.' });
+        return;
+      }
+    }
+
+    if (newPassword.length < 4) {
+      setMessage({ type: 'error', text: 'A nova senha deve ter pelo menos 4 caracteres.' });
       return;
     }
-    if (password !== confirmPassword) {
+    if (newPassword !== confirmPassword) {
       setMessage({ type: 'error', text: 'As senhas não conferem.' });
       return;
     }
 
-    localStorage.setItem('sgp_admin_password', password);
+    localStorage.setItem('sgp_admin_password', newPassword);
     setIsPasswordSet(true);
-    setPassword('');
+    setCurrentPassword('');
+    setNewPassword('');
     setConfirmPassword('');
-    setMessage({ type: 'success', text: 'Senha de administrador definida com sucesso!' });
+    setMessage({ type: 'success', text: 'Senha de administrador atualizada com sucesso!' });
+  };
+
+  const handleSaveUsage = () => {
+    onUpdateUsage(localUsage);
+    setMessage({ type: 'success', text: 'Médias de consumo atualizadas com sucesso.' });
+    setIsUsageOpen(false); // Close after saving for cleaner UI
+  };
+
+  const handleUsageChange = (id: string, val: string) => {
+    const num = parseInt(val);
+    setLocalUsage(prev => ({
+      ...prev,
+      [id]: isNaN(num) ? 0 : num
+    }));
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="space-y-8 max-w-4xl mx-auto pb-10">
       
       {/* Header */}
       <div className="bg-gray-800 text-white p-6 rounded-xl shadow-md flex items-center justify-between">
@@ -180,7 +211,7 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
             <Shield size={28} />
             Painel do Usuário Master
           </h2>
-          <p className="text-gray-300 mt-1">Gerenciamento de dados sensíveis e configurações de segurança.</p>
+          <p className="text-gray-300 mt-1">Gerenciamento de dados, segurança e parâmetros.</p>
         </div>
       </div>
 
@@ -194,7 +225,7 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
         </div>
       )}
 
-      {/* 0. Emergency Restore Section (Only visible if point exists) */}
+      {/* 0. Emergency Restore Section */}
       {restorePointDate && (
         <section className="bg-orange-50 rounded-xl shadow-sm border border-orange-200 p-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -205,7 +236,6 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
               </h3>
               <p className="text-orange-700 text-sm mt-1">
                 Existe um ponto de restauração automático criado em <strong>{new Date(restorePointDate).toLocaleString('pt-BR')}</strong>.
-                Caso algo tenha dado errado na última importação ou limpeza, você pode reverter agora.
               </p>
             </div>
             <button
@@ -225,37 +255,46 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
           <Lock size={20} className="text-purple-600" />
           Senha Master
         </h3>
-        <p className="text-gray-500 mb-6 text-sm">
-          Defina ou altere a senha de administrador. Esta senha protege funções críticas como Importar e Limpar dados.
-        </p>
-
+        
         <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
           <div className="flex items-center gap-2 mb-4">
             <span className={`w-3 h-3 rounded-full ${isPasswordSet ? 'bg-green-500' : 'bg-red-500'}`}></span>
             <span className="text-sm font-medium text-gray-700">
-              {isPasswordSet ? 'Senha de Administrador Ativa' : 'Senha não definida (Proteção inativa)'}
+              {isPasswordSet ? 'Senha Ativa' : 'Senha não definida'}
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+             {isPasswordSet && (
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Senha Atual</label>
+                <input 
+                  type="password" 
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  placeholder="Digite sua senha atual para autorizar alterações"
+                />
+              </div>
+            )}
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Nova Senha</label>
               <input 
                 type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                placeholder="Digite a senha..."
+                placeholder="Nova senha..."
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Confirmar Senha</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Confirmar Nova Senha</label>
               <input 
                 type="password" 
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                placeholder="Repita a senha..."
+                placeholder="Repita a nova senha..."
               />
             </div>
           </div>
@@ -270,16 +309,76 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
         </div>
       </section>
 
-      {/* 2. Backup Only */}
+      {/* 2. Consumption Data Configuration (Collapsible) */}
+      <section className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <button 
+          onClick={() => setIsUsageOpen(!isUsageOpen)}
+          className="w-full flex items-center justify-between p-6 hover:bg-gray-50 transition-colors text-left focus:outline-none"
+        >
+          <div className="flex items-center gap-2">
+            <Calculator size={20} className="text-blue-600" />
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">Dados de Consumo (Média Anual)</h3>
+              <p className="text-xs text-gray-500 font-normal">Clique para expandir ou ocultar a tabela de médias manuais.</p>
+            </div>
+          </div>
+          {isUsageOpen ? <ChevronUp size={20} className="text-gray-400" /> : <ChevronDown size={20} className="text-gray-400" />}
+        </button>
+
+        {isUsageOpen && (
+          <div className="p-6 border-t border-gray-100 animate-fade-in bg-gray-50/30">
+            <p className="text-sm text-gray-500 mb-4 bg-blue-50 p-3 rounded-lg border border-blue-100">
+              <span className="text-blue-600 font-bold">Nota:</span> Se o sistema detectar histórico de uso superior a 3 anos, 
+              ele passará automaticamente a usar a média calculada do histórico, ignorando os valores abaixo.
+            </p>
+
+            <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase">Equipamento</th>
+                    <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase w-48">Média Anual (Qtd)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {EQUIPMENT_RULES.map(rule => (
+                    <tr key={rule.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-3 text-sm text-gray-700 font-medium">
+                        {rule.name}
+                      </td>
+                      <td className="px-6 py-3">
+                        <input 
+                          type="number"
+                          min="0"
+                          value={localUsage[rule.id] !== undefined ? localUsage[rule.id] : rule.estAnnualUsage}
+                          onChange={(e) => handleUsageChange(rule.id, e.target.value)}
+                          className="w-full px-3 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-right font-mono"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button 
+                onClick={handleSaveUsage}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+              >
+                <Save size={16} />
+                Salvar Configurações
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* 3. Backup */}
       <section className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-          <Download size={20} className="text-blue-600" />
-          Backup dos Dados (Exportar)
+          <Download size={20} className="text-green-600" />
+          Backup dos Dados
         </h3>
-        <p className="text-gray-500 mb-6 text-sm">
-          Faça o download dos dados para salvar um backup seguro em seu computador.
-        </p>
-        
         <button 
           onClick={handleExport}
           className="w-full md:w-auto flex items-center justify-center gap-3 px-6 py-4 bg-gray-50 border border-gray-200 rounded-xl hover:bg-gray-100 transition-colors text-gray-700 font-medium"
@@ -287,131 +386,89 @@ const Settings: React.FC<SettingsProps> = ({ plates, logs, onImport, onClear }) 
           <Download size={24} />
           <div>
             <span className="block text-left font-bold text-gray-800">Exportar Dados (.json)</span>
-            <span className="block text-left text-xs font-normal">Salvar arquivo no computador</span>
+            <span className="block text-left text-xs font-normal">Inclui placas, logs e configurações</span>
           </div>
         </button>
       </section>
 
-      {/* 3. Danger Zone (Import & Clear) */}
+      {/* 4. Danger Zone */}
       <section className="bg-white rounded-xl shadow-sm border border-red-200 p-6 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
         <h3 className="text-lg font-bold text-red-700 mb-4 flex items-center gap-2">
           <ShieldAlert size={20} />
-          Zona de Perigo (Ações Destrutivas)
+          Zona de Perigo
         </h3>
         <p className="text-gray-500 mb-6 text-sm">
-          As ações abaixo <strong>substituem ou apagam</strong> os dados atuais permanentemente. 
-          É obrigatório o uso da Senha Master.
+          Ações irreversíveis. Exigem Senha Master.
         </p>
 
         <div className="space-y-4">
-          
-          {/* Import Row */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between p-4 border border-red-100 rounded-xl bg-red-50/50 hover:bg-red-50 transition-colors">
+          <div className="flex flex-col md:flex-row md:items-center justify-between p-4 border border-red-100 rounded-xl bg-red-50/50">
             <div className="mb-4 md:mb-0">
               <h4 className="font-bold text-gray-800 flex items-center gap-2">
                 <Upload size={18} className="text-gray-500" />
                 Importar Backup
               </h4>
-              <p className="text-xs text-gray-600 mt-1 max-w-md">
-                Substitui todo o banco de dados atual pelo conteúdo de um arquivo. 
-                Use com cautela para não sobrescrever dados recentes.
+              <p className="text-xs text-gray-600 mt-1">
+                Substitui o banco de dados atual.
               </p>
             </div>
             <button 
               onClick={() => handleRequestAction('IMPORT')}
-              className="px-4 py-2 bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50 hover:border-red-300 transition-colors font-bold flex items-center gap-2 shadow-sm whitespace-nowrap justify-center"
+              className="px-4 py-2 bg-white border border-red-200 text-red-700 rounded-lg hover:bg-red-50 font-bold flex items-center gap-2 shadow-sm"
             >
               <Upload size={16} />
-              Restaurar Backup
+              Restaurar
             </button>
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".json"
-              className="hidden" 
-            />
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
           </div>
 
-          {/* Clear Row */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between p-4 border border-red-100 rounded-xl bg-red-50/50 hover:bg-red-50 transition-colors">
+          <div className="flex flex-col md:flex-row md:items-center justify-between p-4 border border-red-100 rounded-xl bg-red-50/50">
             <div className="mb-4 md:mb-0">
               <h4 className="font-bold text-red-800 flex items-center gap-2">
                 <Trash2 size={18} className="text-red-600" />
-                Limpar Todo o Sistema
+                Limpar Sistema
               </h4>
-              <p className="text-xs text-red-600 mt-1 max-w-md">
-                Apaga todas as placas, histórico e configurações. O sistema voltará ao estado inicial (zero).
+              <p className="text-xs text-red-600 mt-1">
+                Apaga tudo.
               </p>
             </div>
             <button 
               onClick={() => handleRequestAction('CLEAR')}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-bold flex items-center gap-2 shadow-sm whitespace-nowrap justify-center"
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold flex items-center gap-2 shadow-sm"
             >
               <Trash2 size={16} />
-              Limpar Dados
+              Limpar
             </button>
           </div>
-
         </div>
       </section>
 
-      {/* Unified Security Modal */}
+      {/* Security Modal */}
       {showSecurityModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200 border-t-4 border-red-500">
-            <div className="flex flex-col items-center text-center mb-6">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4 bg-red-100 text-red-600">
-                <ShieldAlert size={28} />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900">
-                {pendingAction === 'CLEAR' ? 'Limpar Dados' : 'Importar Backup'}
-              </h3>
-              <p className="text-gray-500 mt-2 text-sm">
-                {pendingAction === 'CLEAR' 
-                  ? 'Esta ação apagará os dados atuais. ' 
-                  : 'A importação substituirá os dados atuais por um arquivo antigo. '}
-                Dados não salvos serão perdidos.
-              </p>
-              <div className="mt-3 bg-blue-50 text-blue-800 text-xs px-3 py-2 rounded-lg border border-blue-100">
-                Um <strong>Ponto de Restauração</strong> será criado automaticamente antes da execução.
-              </div>
-              <p className="text-gray-800 font-bold mt-4 text-sm">
-                Digite sua senha Master para confirmar:
-              </p>
-            </div>
-
-            <div className="mb-6">
-              <input 
-                type="password"
-                value={securityPasswordInput}
-                onChange={(e) => setSecurityPasswordInput(e.target.value)}
-                placeholder="Senha de Administrador"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-center text-lg"
-                autoFocus
-              />
-            </div>
-
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border-t-4 border-red-500">
+            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
+              {pendingAction === 'CLEAR' ? 'Limpar Dados' : 'Importar Backup'}
+            </h3>
+            <p className="text-gray-500 text-center text-sm mb-4">
+              Digite a Senha Master para confirmar.
+            </p>
+            <input 
+              type="password"
+              value={securityPasswordInput}
+              onChange={(e) => setSecurityPasswordInput(e.target.value)}
+              placeholder="Senha de Administrador"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 mb-6 text-center text-lg"
+              autoFocus
+            />
             <div className="flex gap-3">
-              <button 
-                onClick={() => setShowSecurityModal(false)}
-                className="flex-1 py-3 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={confirmSecurityAction}
-                disabled={!securityPasswordInput}
-                className="flex-1 py-3 px-4 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Confirmar
-              </button>
+              <button onClick={() => setShowSecurityModal(false)} className="flex-1 py-3 border rounded-lg hover:bg-gray-50">Cancelar</button>
+              <button onClick={confirmSecurityAction} disabled={!securityPasswordInput} className="flex-1 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold disabled:opacity-50">Confirmar</button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };

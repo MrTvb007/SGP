@@ -1,16 +1,18 @@
 
+
 import React, { useState } from 'react';
-import { Plate, TransactionLog, PlateStatus } from '../types';
+import { Plate, TransactionLog, PlateStatus, UsageConfig } from '../types';
 import { EQUIPMENT_RULES } from '../constants';
-import { formatNumber } from '../utils/plateUtils';
-import { TrendingDown, TrendingUp, AlertTriangle, CheckCircle, FileText, History } from 'lucide-react';
+import { formatNumber, calculateEffectiveUsage } from '../utils/plateUtils';
+import { TrendingDown, TrendingUp, AlertTriangle, CheckCircle, FileText, History, Info } from 'lucide-react';
 
 interface ReportsProps {
   plates: Plate[];
   logs: TransactionLog[];
+  usageConfig: UsageConfig;
 }
 
-const Reports: React.FC<ReportsProps> = ({ plates, logs }) => {
+const Reports: React.FC<ReportsProps> = ({ plates, logs, usageConfig }) => {
   const [activeTab, setActiveTab] = useState<'forecast' | 'history' | 'allocated'>('forecast');
 
   // Logic for Stock Forecast
@@ -19,15 +21,18 @@ const Reports: React.FC<ReportsProps> = ({ plates, logs }) => {
       p => p.equipmentName === rule.name && p.status === PlateStatus.IN_STOCK
     ).length;
     
-    // Monthly usage = Annual / 12
-    const monthlyUsage = rule.estAnnualUsage / 12;
+    // Effective Usage Calculation (History vs Manual)
+    const effectiveUsage = calculateEffectiveUsage(rule, logs, usageConfig);
+    
+    const monthlyUsage = effectiveUsage.value / 12;
     // Months coverage = Stock / Monthly
     const monthsCoverage = monthlyUsage > 0 ? (currentStock / monthlyUsage) : 999;
     
     return {
       name: rule.name,
       stock: currentStock,
-      annualUsage: rule.estAnnualUsage,
+      annualUsage: effectiveUsage.value,
+      usageSource: effectiveUsage.source,
       monthsCoverage: monthsCoverage,
       isLow: monthsCoverage < 12
     };
@@ -81,8 +86,8 @@ const Reports: React.FC<ReportsProps> = ({ plates, logs }) => {
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-6">
               <h3 className="font-bold text-blue-800 mb-1">Planejamento de Estoque</h3>
               <p className="text-sm text-blue-600">
-                Abaixo listamos a cobertura de estoque baseada na média de consumo anual estimada. 
-                Itens com cobertura inferior a <strong>12 meses</strong> são destacados em vermelho.
+                A cobertura é calculada com base na média de consumo anual (manual ou histórica).
+                Itens com cobertura inferior a <strong>12 meses</strong> são destacados.
               </p>
             </div>
 
@@ -91,8 +96,9 @@ const Reports: React.FC<ReportsProps> = ({ plates, logs }) => {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase">Equipamento</th>
-                    <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-right">Estoque Atual</th>
-                    <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-right">Consumo Anual (Est.)</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-right">Estoque</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-right">Consumo Anual</th>
+                    <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center">Fonte do Dado</th>
                     <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-right">Cobertura (Meses)</th>
                     <th className="px-4 py-3 text-xs font-bold text-gray-500 uppercase text-center">Status</th>
                   </tr>
@@ -103,6 +109,16 @@ const Reports: React.FC<ReportsProps> = ({ plates, logs }) => {
                       <td className="px-4 py-3 text-sm font-medium text-gray-800">{item.name}</td>
                       <td className="px-4 py-3 text-sm text-right font-mono">{item.stock}</td>
                       <td className="px-4 py-3 text-sm text-right text-gray-500">{item.annualUsage}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border 
+                          ${item.usageSource === 'HISTORY' 
+                            ? 'bg-purple-50 text-purple-700 border-purple-100' 
+                            : item.usageSource === 'MANUAL'
+                              ? 'bg-blue-50 text-blue-700 border-blue-100'
+                              : 'bg-gray-50 text-gray-500 border-gray-200'}`}>
+                          {item.usageSource === 'HISTORY' ? 'Histórico (3 anos)' : item.usageSource === 'MANUAL' ? 'Manual' : 'Padrão'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-sm text-right font-bold">
                         {item.monthsCoverage > 120 ? '> 120' : item.monthsCoverage.toFixed(1)}
                       </td>
@@ -203,9 +219,13 @@ const Reports: React.FC<ReportsProps> = ({ plates, logs }) => {
                             <span className="flex items-center gap-1 text-green-600 text-xs font-bold uppercase">
                               <TrendingDown size={14} className="rotate-180" /> Entrada
                             </span>
-                          ) : (
+                          ) : log.type === 'OUT' ? (
                             <span className="flex items-center gap-1 text-orange-600 text-xs font-bold uppercase">
                               <TrendingUp size={14} /> Saída
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-purple-600 text-xs font-bold uppercase">
+                              <History size={14} /> Devolução
                             </span>
                           )}
                         </td>
@@ -215,7 +235,7 @@ const Reports: React.FC<ReportsProps> = ({ plates, logs }) => {
                         </td>
                         <td className="px-4 py-3 text-sm font-bold text-right">{log.count}</td>
                         <td className="px-4 py-3 text-sm text-gray-500">
-                          {log.type === 'OUT' ? `Destino: ${log.destination}` : 'Recebimento de lote'}
+                          {log.type === 'OUT' ? `Destino: ${log.destination}` : log.type === 'RETURN' ? 'Quarentena iniciada' : 'Recebimento de lote'}
                         </td>
                       </tr>
                     ))

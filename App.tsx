@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -7,26 +8,31 @@ import Inventory from './pages/Inventory';
 import Reports from './pages/Reports';
 import PurchaseOrder from './pages/PurchaseOrder';
 import Settings from './pages/Settings';
-import { Plate, TransactionLog, ViewState, PlateStatus } from './types';
+import { Plate, TransactionLog, ViewState, PlateStatus, UsageConfig } from './types';
 
 function App() {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [plates, setPlates] = useState<Plate[]>([]);
   const [logs, setLogs] = useState<TransactionLog[]>([]);
+  const [usageConfig, setUsageConfig] = useState<UsageConfig>({});
 
   // Load from local storage on mount
   useEffect(() => {
     const storedPlates = localStorage.getItem('sgp_plates');
     const storedLogs = localStorage.getItem('sgp_logs');
+    const storedUsage = localStorage.getItem('sgp_usage_config');
+    
     if (storedPlates) setPlates(JSON.parse(storedPlates));
     if (storedLogs) setLogs(JSON.parse(storedLogs));
+    if (storedUsage) setUsageConfig(JSON.parse(storedUsage));
   }, []);
 
   // Persist to local storage
   useEffect(() => {
     localStorage.setItem('sgp_plates', JSON.stringify(plates));
     localStorage.setItem('sgp_logs', JSON.stringify(logs));
-  }, [plates, logs]);
+    localStorage.setItem('sgp_usage_config', JSON.stringify(usageConfig));
+  }, [plates, logs, usageConfig]);
 
   const handleAddPlates = (newPlates: Plate[], log: TransactionLog) => {
     setPlates(prev => [...prev, ...newPlates]);
@@ -76,16 +82,19 @@ function App() {
   const handleImportData = (importedPlates: Plate[], importedLogs: TransactionLog[]) => {
     setPlates(importedPlates);
     setLogs(importedLogs);
+    // Note: We might want to import usageConfig as well if it was exported, 
+    // but for now keeping it simple or manual.
   };
 
   // Clear Data Handler
   const handleClearData = () => {
     setPlates([]);
     setLogs([]);
+    setUsageConfig({});
     localStorage.removeItem('sgp_plates');
     localStorage.removeItem('sgp_logs');
-    // Note: We do NOT clear the password ('sgp_admin_password') here, 
-    // so the user doesn't get locked out or have to reset it unnecessarily.
+    localStorage.removeItem('sgp_usage_config');
+    // Note: We do NOT clear the password ('sgp_admin_password') here.
   };
 
   return (
@@ -129,14 +138,28 @@ function App() {
                 onUpdatePlate={handleUpdatePlate}
               />
             )}
-            {currentView === 'reports' && <Reports plates={plates} logs={logs} />}
-            {currentView === 'purchase' && <PurchaseOrder plates={plates} />}
+            {currentView === 'reports' && (
+              <Reports 
+                plates={plates} 
+                logs={logs} 
+                usageConfig={usageConfig}
+              />
+            )}
+            {currentView === 'purchase' && (
+              <PurchaseOrder 
+                plates={plates} 
+                logs={logs}
+                usageConfig={usageConfig}
+              />
+            )}
             {currentView === 'settings' && (
               <Settings 
                 plates={plates} 
                 logs={logs} 
+                usageConfig={usageConfig}
                 onImport={handleImportData} 
                 onClear={handleClearData} 
+                onUpdateUsage={setUsageConfig}
               />
             )}
           </div>

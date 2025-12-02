@@ -1,22 +1,28 @@
 
+
 import React from 'react';
 import { ShoppingCart, AlertTriangle, CheckCircle, ArrowRight } from 'lucide-react';
-import { Plate, PlateStatus } from '../types';
+import { Plate, PlateStatus, TransactionLog, UsageConfig } from '../types';
 import { EQUIPMENT_RULES } from '../constants';
-import { formatNumber, getNextAvailableNumber, findEquipmentByNumber } from '../utils/plateUtils';
+import { formatNumber, getNextAvailableNumber, findEquipmentByNumber, calculateEffectiveUsage } from '../utils/plateUtils';
 
 interface PurchaseOrderProps {
   plates: Plate[];
+  logs?: TransactionLog[];
+  usageConfig?: UsageConfig;
 }
 
-const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ plates }) => {
+const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ plates, logs = [], usageConfig = {} }) => {
   
   const purchaseSuggestions = EQUIPMENT_RULES.map(rule => {
     const currentStock = plates.filter(
       p => p.equipmentName === rule.name && p.status === PlateStatus.IN_STOCK
     ).length;
     
-    const monthlyUsage = rule.estAnnualUsage / 12;
+    // Effective usage calculation
+    const effectiveUsage = calculateEffectiveUsage(rule, logs, usageConfig);
+    const monthlyUsage = effectiveUsage.value / 12;
+
     const currentCoverage = monthlyUsage > 0 ? (currentStock / monthlyUsage) : 999;
     
     // Logic: If coverage < 24 months, we need to buy enough to reach 36 months
@@ -55,7 +61,8 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ plates }) => {
       quantityToBuy,
       nextStart,
       nextEnd,
-      note
+      note,
+      usageSource: effectiveUsage.source
     };
   }).sort((a, b) => (a.needsPurchase === b.needsPurchase ? 0 : a.needsPurchase ? -1 : 1));
 
@@ -73,7 +80,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ plates }) => {
           <div>
             <h2 className="text-2xl font-bold">Assistente de Compras</h2>
             <p className="text-blue-100 mt-1">
-              Gera sugestões de compra para atingir 36 meses de cobertura de estoque.
+              Gera sugestões de compra para atingir 36 meses de cobertura.
             </p>
           </div>
         </div>
@@ -120,7 +127,12 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ plates }) => {
                     <tr key={item.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4">
                         <div className="font-medium text-gray-900">{item.name}</div>
-                        <div className="text-xs text-gray-400 mt-1">Consumo Mensal Est.: {item.monthlyUsage.toFixed(1)}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-400">Consumo Mensal: {item.monthlyUsage.toFixed(1)}</span>
+                          <span className={`text-[9px] px-1.5 rounded-full border ${item.usageSource === 'HISTORY' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-gray-50 text-gray-500 border-gray-100'}`}>
+                            {item.usageSource === 'HISTORY' ? 'Histórico' : 'Manual'}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-center font-mono text-gray-600">
                         {item.currentStock}

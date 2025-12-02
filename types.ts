@@ -1,4 +1,5 @@
 
+
 export interface NumberRange {
   start: number;
   end: number;
@@ -8,7 +9,7 @@ export interface EquipmentRule {
   id: string;
   name: string;
   ranges: NumberRange[];
-  estAnnualUsage: number; // Estimated usage per year for forecasting
+  estAnnualUsage: number; // Default fallback
 }
 
 export enum Destination {
@@ -45,4 +46,6 @@ export interface TransactionLog {
   timestamp: string;
 }
 
-export type ViewState = 'dashboard' | 'movements' | 'inventory' | 'reports' | 'purchase';
+export type ViewState = 'dashboard' | 'movements' | 'inventory' | 'reports' | 'purchase' | 'settings';
+
+export type UsageConfig = Record<string, number>; // Key: Equipment ID, Value: Annual Usage
